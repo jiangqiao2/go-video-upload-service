@@ -1,0 +1,21 @@
+package resource
+
+import (
+	"upload-service/pkg/kafka"
+	"upload-service/pkg/manager"
+)
+
+type KafkaResource struct{}
+
+type KafkaResourcePlugin struct{}
+
+func (p *KafkaResourcePlugin) Name() string { return "kafka" }
+
+func (p *KafkaResourcePlugin) MustCreateResource() manager.Resource { return &KafkaResource{} }
+
+func (r *KafkaResource) MustOpen() {
+	kafka.DefaultClient().MustOpen()
+	_ = kafka.DefaultClient().EnsureTopic("transcode.tasks", 3, 1)
+}
+
+func (r *KafkaResource) Close() { kafka.DefaultClient().Close() }
