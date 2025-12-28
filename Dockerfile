@@ -6,12 +6,12 @@ RUN apk add --no-cache ca-certificates tzdata
 # 使用国内 Go 模块代理，避免访问 proxy.golang.org 失败
 ENV GOPROXY=https://goproxy.cn,direct
 
-# 先复制 go.mod/go.sum 并拉依赖，利用缓存
-COPY upload-service/go.mod upload-service/go.sum ./
+# 先复制 go.mod/go.sum 并拉依赖，利用缓存（上下文为当前仓库根目录）
+COPY go.mod go.sum ./
 RUN go mod download
 
 # 复制业务代码
-COPY upload-service/ .
+COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /bin/upload-service ./main.go
 
 FROM alpine:3.19
