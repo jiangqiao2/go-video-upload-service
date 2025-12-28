@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
+	pb "github.com/jiangqiao2/go-video-proto/proto/user/user"
 	"upload-service/pkg/config"
 	"upload-service/pkg/grpcutil"
 	"upload-service/pkg/logger"
 	"upload-service/pkg/observability"
-	pb "github.com/jiangqiao2/go-video-proto/proto/user/user"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

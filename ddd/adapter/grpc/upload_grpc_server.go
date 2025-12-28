@@ -14,12 +14,12 @@ import (
 // UploadGrpcServer implements uploadpb.UploadServiceServer.
 type UploadGrpcServer struct {
 	uploadpb.UnimplementedUploadServiceServer
+
 	videoService service.VideoPublishService
 }
 
 // NewUploadGrpcServer builds a gRPC server using the provided domain service.
 func NewUploadGrpcServer(videoService service.VideoPublishService) *UploadGrpcServer {
-
 	return &UploadGrpcServer{
 		videoService: videoService,
 	}

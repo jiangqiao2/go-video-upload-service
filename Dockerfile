@@ -24,9 +24,8 @@ RUN apk add --no-cache tzdata && \
 COPY --from=builder /bin/upload-service /usr/local/bin/upload-service
 # 从构建阶段拷贝配置，避免第二阶段再依赖宿主路径
 COPY --from=builder /app/configs ./configs
-# 拷贝 JWT 证书，便于使用 RSA/HS JWT 校验
-COPY private.pem public.pem /app/
-COPY private.pem public.pem /app/certs/
+# 预留 JWT 证书目录，推荐在部署时通过 Secret 挂载到 /app/certs
+RUN mkdir -p /app/certs
 
 ARG CONFIG_PATH=/app/configs/config.dev.yaml
 ENV CONFIG_PATH=${CONFIG_PATH}
