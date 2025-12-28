@@ -19,6 +19,7 @@ type UploadGrpcServer struct {
 
 // NewUploadGrpcServer builds a gRPC server using the provided domain service.
 func NewUploadGrpcServer(videoService service.VideoPublishService) *UploadGrpcServer {
+
 	return &UploadGrpcServer{
 		videoService: videoService,
 	}
