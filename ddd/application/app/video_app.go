@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"time"
 	"upload-service/pkg/logger"
 
@@ -35,16 +36,24 @@ type videoAppImpl struct {
 	userQueryService   service.UserQueryService
 }
 
+var (
+	onceVideoApp      sync.Once
+	singletonVideoApp VideoApp
+)
+
 // DefaultVideoApp constructs a VideoApp with default infrastructure dependencies.
 func DefaultVideoApp() VideoApp {
-	return &videoAppImpl{
-		videoService:       service.NewVideoPublishService(),
-		videoRepo:          persistence.NewVideoRepository(),
-		userServiceClient:  grpcClient.DefaultUserServiceClient(),
-		videoServiceClient: grpcClient.DefaultVideoServiceClient(),
-		pollInterval:       5 * time.Second,
-		userQueryService:   service.NewUserQueryService(),
-	}
+	onceVideoApp.Do(func() {
+		singletonVideoApp = &videoAppImpl{
+			videoService:       service.NewVideoPublishService(),
+			videoRepo:          persistence.NewVideoRepository(),
+			userServiceClient:  grpcClient.DefaultUserServiceClient(),
+			videoServiceClient: grpcClient.DefaultVideoServiceClient(),
+			pollInterval:       5 * time.Second,
+			userQueryService:   service.NewUserQueryService(),
+		}
+	})
+	return singletonVideoApp
 }
 
 func (a *videoAppImpl) PublishVideo(ctx context.Context, req *cqe.PublishVideoReq) (*dto.VideoDetailDto, error) {

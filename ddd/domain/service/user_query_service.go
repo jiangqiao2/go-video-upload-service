@@ -2,11 +2,8 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"upload-service/ddd/domain/entity"
 	grpcClient "upload-service/ddd/infrastructure/grpc"
-	"upload-service/pkg/config"
 	"upload-service/pkg/logger"
 )
 
@@ -64,32 +61,8 @@ func (s *userQueryServiceImpl) BatchQueryUsers(ctx context.Context, userUUIDs []
 		res[info.UserUuid] = &UserSummary{
 			UserUUID:  info.UserUuid,
 			Account:   info.Account,
-			AvatarUrl: normalizeAvatarURL(info.AvatarUrl),
+			AvatarUrl: info.AvatarUrl,
 		}
 	}
 	return res, nil
-}
-
-func normalizeAvatarURL(url string) string {
-	url = strings.TrimSpace(url)
-	if url == "" {
-		return ""
-	}
-	if len(url) >= 4 && (url[0:4] == "http" || url[0:5] == "https") {
-		return url
-	}
-	cfg := config.GetGlobalConfig()
-	base := ""
-	if cfg != nil {
-		base = strings.TrimSpace(cfg.Public.StorageBase)
-	}
-	path := "/storage/image/" + strings.TrimLeft(url, "/")
-	if base == "" {
-		return path
-	}
-	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
-		base = "http://" + base
-	}
-	base = strings.TrimRight(base, "/")
-	return fmt.Sprintf("%s%s", base, path)
 }

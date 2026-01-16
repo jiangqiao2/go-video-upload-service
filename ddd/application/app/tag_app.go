@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"sync"
 	"upload-service/ddd/application/cqe"
 	"upload-service/ddd/application/dto"
+	"upload-service/ddd/domain/repo"
 	"upload-service/ddd/infrastructure/database/persistence"
 	"upload-service/ddd/infrastructure/database/po"
 )
@@ -12,15 +14,28 @@ type TagApp interface {
 	ListTags(ctx context.Context, req *cqe.ListTagsReq) (*dto.TagListDto, error)
 }
 
-type tagAppImpl struct{}
+type tagAppImpl struct {
+	tagRepo repo.TagRepository
+}
 
-func DefaultTagApp() TagApp { return &tagAppImpl{} }
+var (
+	defaultTagApp TagApp
+	tagAppOnce    sync.Once
+)
+
+func DefaultTagApp() TagApp {
+	tagAppOnce.Do(func() {
+		defaultTagApp = &tagAppImpl{
+			tagRepo: persistence.NewTagRepository(),
+		}
+	})
+	return defaultTagApp
+}
 
 func (a *tagAppImpl) ListTags(ctx context.Context, req *cqe.ListTagsReq) (*dto.TagListDto, error) {
-	repo := persistence.NewTagRepository()
 	var list []*po.Tag
 	var err error
-	list, err = repo.ListAll(ctx)
+	list, err = a.tagRepo.ListAll(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -43,12 +43,15 @@ type uploadVideoAppImpl struct {
 }
 
 func DefaultUploadVideoApp() UploadVideoApp {
-	return &uploadVideoAppImpl{
-		minioService:      rustfsInfra.DefaultRustFSService(),
-		uploadVideoRepo:   persistence.NewUploadVideoRepository(),
-		uploadVideoSrv:    service.NewUploadVideoService(),
-		userServiceClient: grpcClient.DefaultUserServiceClient(),
-	}
+	onceUploadVideoApp.Do(func() {
+		singletonUploadVideoApp = &uploadVideoAppImpl{
+			minioService:      rustfsInfra.DefaultRustFSService(),
+			uploadVideoRepo:   persistence.NewUploadVideoRepository(),
+			uploadVideoSrv:    service.NewUploadVideoService(),
+			userServiceClient: grpcClient.DefaultUserServiceClient(),
+		}
+	})
+	return singletonUploadVideoApp
 }
 
 func (u *uploadVideoAppImpl) UploadVideoInit(ctx context.Context, req *cqe.UploadVideoInitReq) (*dto.UploadVideoDto, error) {
