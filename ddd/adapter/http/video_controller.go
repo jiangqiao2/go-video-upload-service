@@ -69,16 +69,8 @@ func (c *videoControllerImpl) RegisterDebugApi(router *gin.RouterGroup) {}
 
 func (c *videoControllerImpl) RegisterOpsApi(router *gin.RouterGroup) {}
 
-func (c *videoControllerImpl) extractUserInfo(ctx *gin.Context) (string, error) {
-	userUUID := ctx.GetHeader("X-User-UUID")
-	if userUUID == "" {
-		return "", errno.ErrUnauthorized
-	}
-	return userUUID, nil
-}
-
 func (c *videoControllerImpl) PublishVideo(ctx *gin.Context) {
-	userUUID, err := c.extractUserInfo(ctx)
+	userUUID, err := ExtractUserUUID(ctx)
 	if err != nil {
 		restapi.Failed(ctx, err)
 		return
@@ -101,7 +93,7 @@ func (c *videoControllerImpl) PublishVideo(ctx *gin.Context) {
 }
 
 func (c *videoControllerImpl) ListVideos(ctx *gin.Context) {
-	userUUID, err := c.extractUserInfo(ctx)
+	userUUID, err := ExtractUserUUID(ctx)
 	if err != nil {
 		restapi.Failed(ctx, err)
 		return

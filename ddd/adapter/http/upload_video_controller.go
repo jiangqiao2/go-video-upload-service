@@ -86,20 +86,9 @@ func (c *uploadVideoControllerImpl) RegisterOpsApi(router *gin.RouterGroup) {
 	// 运维API实现
 }
 
-// extractUserInfo 从请求头中提取用户信息
-func (c *uploadVideoControllerImpl) extractUserInfo(ctx *gin.Context) (string, error) {
-	userUUID := ctx.GetHeader("X-User-UUID")
-
-	if userUUID == "" {
-		return "", errno.ErrUnauthorized
-	}
-
-	return userUUID, nil
-}
-
 func (c *uploadVideoControllerImpl) Init(ctx *gin.Context) {
 	// 提取用户信息
-	userUUID, err := c.extractUserInfo(ctx)
+	userUUID, err := ExtractUserUUID(ctx)
 	if err != nil {
 		restapi.Failed(ctx, err)
 		return
@@ -124,7 +113,7 @@ func (c *uploadVideoControllerImpl) Init(ctx *gin.Context) {
 
 func (c *uploadVideoControllerImpl) TestAuth(ctx *gin.Context) {
 	// 提取用户信息
-	userUUID, err := c.extractUserInfo(ctx)
+	userUUID, err := ExtractUserUUID(ctx)
 	if err != nil {
 		restapi.Failed(ctx, err)
 		return
@@ -143,7 +132,7 @@ func (c *uploadVideoControllerImpl) TestAuth(ctx *gin.Context) {
 
 func (c *uploadVideoControllerImpl) MergeChunks(ctx *gin.Context) {
 	// 提取用户信息
-	userUUID, err := c.extractUserInfo(ctx)
+	userUUID, err := ExtractUserUUID(ctx)
 	if err != nil {
 		restapi.Failed(ctx, err)
 		return
@@ -183,7 +172,7 @@ func (c *uploadVideoControllerImpl) GetStoragePath(ctx *gin.Context) {
 }
 
 func (c *uploadVideoControllerImpl) GetUploadStatus(ctx *gin.Context) {
-	userUUID, err := c.extractUserInfo(ctx)
+	userUUID, err := ExtractUserUUID(ctx)
 	if err != nil {
 		restapi.Failed(ctx, err)
 		return
@@ -210,7 +199,7 @@ func (c *uploadVideoControllerImpl) PresignImage(ctx *gin.Context) {
 		return
 	}
 	req.Normalize()
-	if uuid, err := c.extractUserInfo(ctx); err == nil {
+	if uuid, err := ExtractUserUUID(ctx); err == nil {
 		req.UserUUID = uuid
 	}
 	if err := req.Validate(); err != nil {
@@ -227,7 +216,7 @@ func (c *uploadVideoControllerImpl) PresignImage(ctx *gin.Context) {
 }
 
 func (c *uploadVideoControllerImpl) UploadImage(ctx *gin.Context) {
-	userUUID, err := c.extractUserInfo(ctx)
+	userUUID, err := ExtractUserUUID(ctx)
 	if err != nil {
 		restapi.Failed(ctx, err)
 		return
@@ -255,7 +244,7 @@ func (c *uploadVideoControllerImpl) UploadImage(ctx *gin.Context) {
 }
 
 func (c *uploadVideoControllerImpl) PresignChunk(ctx *gin.Context) {
-	userUUID, err := c.extractUserInfo(ctx)
+	userUUID, err := ExtractUserUUID(ctx)
 	if err != nil {
 		restapi.Failed(ctx, err)
 		return
@@ -280,7 +269,7 @@ func (c *uploadVideoControllerImpl) PresignChunk(ctx *gin.Context) {
 }
 
 func (c *uploadVideoControllerImpl) CompleteChunk(ctx *gin.Context) {
-	userUUID, err := c.extractUserInfo(ctx)
+	userUUID, err := ExtractUserUUID(ctx)
 	if err != nil {
 		restapi.Failed(ctx, err)
 		return
