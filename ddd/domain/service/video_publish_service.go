@@ -6,21 +6,17 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"upload-service/ddd/adapter/task"
-	"upload-service/ddd/application/cqe"
 	"upload-service/ddd/domain/entity"
 	"upload-service/ddd/domain/gateway"
 	"upload-service/ddd/domain/repo"
 	"upload-service/ddd/domain/vo"
-	"upload-service/ddd/infrastructure/database/persistence"
-	rustfsInfra "upload-service/ddd/infrastructure/rustfs"
 	"upload-service/pkg/errno"
 	"upload-service/pkg/logger"
 )
 
 // VideoPublishService defines domain logic for publishing videos.
 type VideoPublishService interface {
-	PublishVideo(ctx context.Context, cmd *cqe.PublishVideoReq) (*entity.VideoEntity, *entity.UploadVideoEntity, error)
+	PublishVideo(ctx context.Context, cmd *vo.PublishVideoCmd) (*entity.VideoEntity, *entity.UploadVideoEntity, bool, error)
 	UpdateVideoTranscodeInfo(ctx context.Context, videoUUID string, status vo.VideoStatus, videoURL string, transcodeTaskUUID string, errorMessage string, publishedAt *time.Time) error
 	ListVideos(ctx context.Context, userUUID string, status string, offset, limit int) ([]*entity.VideoEntity, int64, error)
 	ListPublicVideos(ctx context.Context, status string, offset, limit int) ([]*entity.VideoEntity, int64, error)
@@ -33,29 +29,30 @@ type videoPublishServiceImpl struct {
 }
 
 // NewVideoPublishService builds a VideoPublishService with default repositories.
-func NewVideoPublishService() VideoPublishService {
+func NewVideoPublishService(videoRepo repo.VideoRepository, uploadVideoRepo repo.UploadVideoRepository, minioSrv gateway.MinioService) VideoPublishService {
 	return &videoPublishServiceImpl{
-		videoRepo:       persistence.NewVideoRepository(),
-		uploadVideoRepo: persistence.NewUploadVideoRepository(),
-		minioSrv:        rustfsInfra.DefaultRustFSService(),
+		videoRepo:       videoRepo,
+		uploadVideoRepo: uploadVideoRepo,
+		minioSrv:        minioSrv,
 	}
 }
 
-func (s *videoPublishServiceImpl) PublishVideo(ctx context.Context, cmd *cqe.PublishVideoReq) (*entity.VideoEntity, *entity.UploadVideoEntity, error) {
+func (s *videoPublishServiceImpl) PublishVideo(ctx context.Context, cmd *vo.PublishVideoCmd) (*entity.VideoEntity, *entity.UploadVideoEntity, bool, error) {
 	uploadVideoEntity, err := s.uploadVideoRepo.QueryByUserAndUUID(ctx, cmd.UploadVideoUUID, cmd.UserUUID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	if uploadVideoEntity == nil {
-		return nil, nil, errno.NewSimpleBizError(errno.ErrUploadIllegal, nil, "upload video not found")
+		return nil, nil, false, errno.NewSimpleBizError(errno.ErrUploadIllegal, nil, "upload video not found")
 	}
+	shouldCleanup := false
 	if !uploadVideoEntity.Status().IsSuccess() {
-		uploadVideoEntity, err = s.mergeUploadVideo(ctx, uploadVideoEntity)
+		uploadVideoEntity, shouldCleanup, err = s.mergeUploadVideo(ctx, uploadVideoEntity)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 		if !uploadVideoEntity.Status().IsSuccess() {
-			return nil, nil, errno.NewSimpleBizError(errno.ErrUploadVideoNotReady, nil)
+			return nil, nil, false, errno.NewSimpleBizError(errno.ErrUploadVideoNotReady, nil)
 		}
 	}
 
@@ -71,26 +68,26 @@ func (s *videoPublishServiceImpl) PublishVideo(ctx context.Context, cmd *cqe.Pub
 
 	if err := s.videoRepo.Create(ctx, videoEntity); err != nil {
 		log.Errorf("PublishVideo create video failed: %v", err)
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
-	return videoEntity, uploadVideoEntity, nil
+	return videoEntity, uploadVideoEntity, shouldCleanup, nil
 }
 
-func (s *videoPublishServiceImpl) mergeUploadVideo(ctx context.Context, uploadVideoEntity *entity.UploadVideoEntity) (*entity.UploadVideoEntity, error) {
+func (s *videoPublishServiceImpl) mergeUploadVideo(ctx context.Context, uploadVideoEntity *entity.UploadVideoEntity) (*entity.UploadVideoEntity, bool, error) {
 	if uploadVideoEntity == nil {
-		return nil, errno.NewSimpleBizError(errno.ErrUploadIllegal, nil, "upload video not found")
+		return nil, false, errno.NewSimpleBizError(errno.ErrUploadIllegal, nil, "upload video not found")
 	}
 	if uploadVideoEntity.Status().IsSuccess() {
-		return uploadVideoEntity, nil
+		return uploadVideoEntity, false, nil
 	}
 
 	count, err := s.uploadVideoRepo.CountChunkByUploadVideoUUID(ctx, uploadVideoEntity.UploadVideoUUID(), vo.UploadChunkStatusCompleted.Value())
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if int(count) != uploadVideoEntity.TotalChunks() {
-		return nil, errno.NewSimpleBizError(errno.ErrUploadVideoNotReady, nil)
+		return nil, false, errno.NewSimpleBizError(errno.ErrUploadVideoNotReady, nil)
 	}
 	if !uploadVideoEntity.Status().IsMerging() {
 		_ = s.uploadVideoRepo.UpdateUploadVideoStatus(ctx, uploadVideoEntity.UploadVideoUUID(), vo.UploadVideoStatusMerging)
@@ -99,19 +96,18 @@ func (s *videoPublishServiceImpl) mergeUploadVideo(ctx context.Context, uploadVi
 	err = s.minioSrv.MergeChunk(ctx, vo.NewMergeChunkVo(uploadVideoEntity.StoragePath(), uploadVideoEntity.ChunkStoragePath(), int64(uploadVideoEntity.TotalChunks())))
 	if err != nil {
 		_ = s.uploadVideoRepo.UpdateUploadVideoStatus(ctx, uploadVideoEntity.UploadVideoUUID(), vo.UploadVideoStatusFailed)
-		return nil, errno.NewBizError(errno.ErrInternalServer, err)
+		return nil, false, errno.NewBizError(errno.ErrInternalServer, err)
 	}
 	if err := s.uploadVideoRepo.UpdateUploadVideoStatus(ctx, uploadVideoEntity.UploadVideoUUID(), vo.UploadVideoStatusSuccess); err != nil {
 		logger.Errorf("update upload video status to success failed: %v", err)
-		return nil, err
+		return nil, false, err
 	}
-	task.EnqueueChunkCleanup(uploadVideoEntity.ChunkStoragePath(), int64(uploadVideoEntity.TotalChunks()))
 
 	updated, err := s.uploadVideoRepo.QueryByUserAndUUID(ctx, uploadVideoEntity.UploadVideoUUID(), uploadVideoEntity.UserUUID())
 	if err != nil || updated == nil {
-		return uploadVideoEntity, err
+		return uploadVideoEntity, true, err
 	}
-	return updated, nil
+	return updated, true, nil
 }
 
 func (s *videoPublishServiceImpl) UpdateVideoTranscodeInfo(ctx context.Context, videoUUID string, status vo.VideoStatus, videoURL string, transcodeTaskUUID string, errorMessage string, publishedAt *time.Time) error {

@@ -10,8 +10,10 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-	"upload-service/ddd/adapter/task"
 	"upload-service/ddd/domain/service"
+	"upload-service/ddd/infrastructure/database/persistence"
+	rustfsInfra "upload-service/ddd/infrastructure/rustfs"
+	"upload-service/ddd/infrastructure/task"
 
 	"github.com/gin-gonic/gin"
 
@@ -162,7 +164,11 @@ func Run() {
 			grpcutil.UnaryServerRequestIDInterceptor,
 			observability.GRPCServerTracingInterceptor("upload-service"),
 		))
-		videoService := service.NewVideoPublishService()
+		videoService := service.NewVideoPublishService(
+			persistence.NewVideoRepository(),
+			persistence.NewUploadVideoRepository(),
+			rustfsInfra.DefaultRustFSService(),
+		)
 		uploadpb.RegisterUploadServiceServer(grpcServer, uploadGrpc.NewUploadGrpcServer(videoService))
 
 		go func() {

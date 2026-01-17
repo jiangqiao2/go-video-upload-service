@@ -6,26 +6,21 @@ import (
 	neturl "net/url"
 	"strings"
 	"time"
-	"upload-service/ddd/adapter/task"
 
 	log "github.com/sirupsen/logrus"
 
-	"upload-service/ddd/application/cqe"
-	"upload-service/ddd/application/dto"
 	"upload-service/ddd/domain/entity"
 	"upload-service/ddd/domain/gateway"
 	"upload-service/ddd/domain/repo"
 	"upload-service/ddd/domain/vo"
-	"upload-service/ddd/infrastructure/database/persistence"
-	rustfsInfra "upload-service/ddd/infrastructure/rustfs"
 	"upload-service/pkg/errno"
 )
 
 type UploadVideoService interface {
-	UploadVideoInit(ctx context.Context, cmd *cqe.UploadVideoInitReq) (*entity.UploadVideoEntity, []*entity.UploadChunkEntity, error)
-	MergeChunk(ctx context.Context, cmd *cqe.MergeChunkReq) (*dto.MergeChunkDto, error)
-	PresignChunk(ctx context.Context, cmd *cqe.PresignChunkReq) (*vo.PresignChunkResult, error)
-	CompleteChunk(ctx context.Context, cmd *cqe.CompleteChunkReq) (*vo.CompleteChunkResult, error)
+	UploadVideoInit(ctx context.Context, cmd *vo.UploadVideoInitCmd) (*entity.UploadVideoEntity, []*entity.UploadChunkEntity, error)
+	MergeChunk(ctx context.Context, cmd *vo.MergeChunkCmd) (*vo.MergeChunkResult, error)
+	PresignChunk(ctx context.Context, cmd *vo.PresignChunkCmd) (*vo.PresignChunkResult, error)
+	CompleteChunk(ctx context.Context, cmd *vo.CompleteChunkCmd) (*vo.CompleteChunkResult, error)
 }
 
 type uploadServiceImpl struct {
@@ -33,19 +28,16 @@ type uploadServiceImpl struct {
 	minioSrv        gateway.MinioService
 }
 
-func NewUploadVideoService() UploadVideoService {
+func NewUploadVideoService(uploadVideoRepo repo.UploadVideoRepository, minioSrv gateway.MinioService) UploadVideoService {
 	return &uploadServiceImpl{
-		uploadVideoRepo: persistence.NewUploadVideoRepository(),
-		minioSrv:        rustfsInfra.DefaultRustFSService(),
+		uploadVideoRepo: uploadVideoRepo,
+		minioSrv:        minioSrv,
 	}
 }
 
-func (s *uploadServiceImpl) UploadVideoInit(ctx context.Context, cmd *cqe.UploadVideoInitReq) (*entity.UploadVideoEntity, []*entity.UploadChunkEntity, error) {
+func (s *uploadServiceImpl) UploadVideoInit(ctx context.Context, cmd *vo.UploadVideoInitCmd) (*entity.UploadVideoEntity, []*entity.UploadChunkEntity, error) {
 	if cmd == nil {
 		return nil, nil, errno.ErrParameterInvalid
-	}
-	if err := cmd.Validate(); err != nil {
-		return nil, nil, err
 	}
 
 	uploadEntity, uploadChunkEntity, err := s.uploadVideoRepo.QueryByUploadVideoFileHash(ctx, &repo.UploadVideoHashQuery{
@@ -139,46 +131,7 @@ func (s *uploadServiceImpl) refreshChunkPresign(ctx context.Context, uploadVideo
 	}
 }
 
-// AttachPresignForChunks 将实体中的直传信息映射到 DTO，供上层返回给前端
-func AttachPresignForChunks(uploadVideoEntity *entity.UploadVideoEntity, res *dto.UploadVideoDto, chunks []*entity.UploadChunkEntity) {
-	if uploadVideoEntity == nil || res == nil || len(res.UploadChunks) == 0 {
-		return
-	}
-	entities := make(map[string]*entity.UploadChunkEntity, len(chunks))
-	for _, c := range chunks {
-		if c == nil {
-			continue
-		}
-		entities[c.ChunkUUID()] = c
-	}
-	for i := range res.UploadChunks {
-		ch := &res.UploadChunks[i]
-		ent := entities[ch.ChunkUUID]
-		key := ""
-		if ent != nil {
-			key = ent.StoragePath()
-		}
-		if key == "" {
-			key = fmt.Sprintf("%s%d", uploadVideoEntity.ChunkStoragePath(), ch.ChunkIndex)
-		}
-		ch.StoragePath = key
-		if ch.Status == vo.UploadChunkStatusCompleted.Value() || key == "" {
-			continue
-		}
-		if ent != nil {
-			ch.PutURL = ent.PutURL()
-			if exp := ent.PresignExpiredAt(); exp != nil {
-				remaining := int(exp.Sub(time.Now()).Seconds())
-				if remaining < 0 {
-					remaining = 0
-				}
-				ch.ExpiresInSec = remaining
-			}
-		}
-	}
-}
-
-func (s *uploadServiceImpl) checkUploadChunk(ctx context.Context, cmd *cqe.UploadChunkReq) (*entity.UploadVideoEntity, *entity.UploadChunkEntity, error) {
+func (s *uploadServiceImpl) checkUploadChunk(ctx context.Context, cmd *vo.UploadChunkCmd) (*entity.UploadVideoEntity, *entity.UploadChunkEntity, error) {
 	// 检查UploadVideo是否存在
 	uploadVideoEntity, err := s.uploadVideoRepo.QueryUploadVideoByUUID(ctx, cmd.UploadVideoUUID)
 	if err != nil {
@@ -226,7 +179,7 @@ func (s *uploadServiceImpl) checkMergeChunk(ctx context.Context, uploadVideoUUID
 	return uploadVideoEntity, nil
 }
 
-func (s *uploadServiceImpl) MergeChunk(ctx context.Context, cmd *cqe.MergeChunkReq) (*dto.MergeChunkDto, error) {
+func (s *uploadServiceImpl) MergeChunk(ctx context.Context, cmd *vo.MergeChunkCmd) (*vo.MergeChunkResult, error) {
 	// 查询user_uuid upload_video_uuid 是否存在
 	uploadVideoEntity, err := s.checkMergeChunk(ctx, cmd.UploadVideoUUID, cmd.UserUUID)
 	if err != nil {
@@ -234,13 +187,13 @@ func (s *uploadServiceImpl) MergeChunk(ctx context.Context, cmd *cqe.MergeChunkR
 	}
 
 	if uploadVideoEntity.Status().IsSuccess() {
-		return &dto.MergeChunkDto{
+		return &vo.MergeChunkResult{
 			Status:          "success",
 			UploadVideoUUID: uploadVideoEntity.UploadVideoUUID(),
 		}, nil
 	}
 	if uploadVideoEntity.Status().IsMerging() {
-		return &dto.MergeChunkDto{
+		return &vo.MergeChunkResult{
 			Status:          "processing",
 			UploadVideoUUID: uploadVideoEntity.UploadVideoUUID(),
 		}, nil
@@ -252,15 +205,14 @@ func (s *uploadServiceImpl) MergeChunk(ctx context.Context, cmd *cqe.MergeChunkR
 		return nil, err
 	}
 
-	task.EnqueueMergeTask(uploadVideoEntity.UploadVideoUUID())
-
-	return &dto.MergeChunkDto{
-		Status:          "processing",
-		UploadVideoUUID: uploadVideoEntity.UploadVideoUUID(),
+	return &vo.MergeChunkResult{
+		Status:            "processing",
+		UploadVideoUUID:   uploadVideoEntity.UploadVideoUUID(),
+		ShouldEnqueueTask: true,
 	}, nil
 }
 
-func (s *uploadServiceImpl) PresignChunk(ctx context.Context, cmd *cqe.PresignChunkReq) (*vo.PresignChunkResult, error) {
+func (s *uploadServiceImpl) PresignChunk(ctx context.Context, cmd *vo.PresignChunkCmd) (*vo.PresignChunkResult, error) {
 	uploadVideoEntity, err := s.uploadVideoRepo.QueryByUserAndUUID(ctx, cmd.UploadVideoUUID, cmd.UserUUID)
 	if err != nil {
 		return nil, err
@@ -310,7 +262,7 @@ func (s *uploadServiceImpl) PresignChunk(ctx context.Context, cmd *cqe.PresignCh
 	}, nil
 }
 
-func (s *uploadServiceImpl) CompleteChunk(ctx context.Context, cmd *cqe.CompleteChunkReq) (*vo.CompleteChunkResult, error) {
+func (s *uploadServiceImpl) CompleteChunk(ctx context.Context, cmd *vo.CompleteChunkCmd) (*vo.CompleteChunkResult, error) {
 	uploadVideoEntity, err := s.uploadVideoRepo.QueryByUserAndUUID(ctx, cmd.UploadVideoUUID, cmd.UserUUID)
 	if err != nil {
 		return nil, err

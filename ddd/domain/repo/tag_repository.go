@@ -2,9 +2,9 @@ package repo
 
 import (
 	"context"
-	"upload-service/ddd/infrastructure/database/po"
+	"upload-service/ddd/domain/entity"
 )
 
 type TagRepository interface {
-	ListAll(ctx context.Context) ([]*po.Tag, error)
+	ListAll(ctx context.Context) ([]*entity.TagEntity, error)
 }

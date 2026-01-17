@@ -7,7 +7,6 @@ import (
 	"upload-service/ddd/application/dto"
 	"upload-service/ddd/domain/repo"
 	"upload-service/ddd/infrastructure/database/persistence"
-	"upload-service/ddd/infrastructure/database/po"
 )
 
 type TagApp interface {
@@ -33,15 +32,13 @@ func DefaultTagApp() TagApp {
 }
 
 func (a *tagAppImpl) ListTags(ctx context.Context, req *cqe.ListTagsReq) (*dto.TagListDto, error) {
-	var list []*po.Tag
-	var err error
-	list, err = a.tagRepo.ListAll(ctx)
+	list, err := a.tagRepo.ListAll(ctx)
 	if err != nil {
 		return nil, err
 	}
 	dtos := make([]*dto.TagDto, 0, len(list))
 	for _, t := range list {
-		dtos = append(dtos, &dto.TagDto{Id: t.Id, TagUUID: t.TagUUID, Name: t.Name, Code: t.Code, Description: t.Description})
+		dtos = append(dtos, &dto.TagDto{Id: t.Id(), TagUUID: t.TagUUID(), Name: t.Name(), Code: t.Code(), Description: t.Description()})
 	}
 	return dto.NewTagListDto(dtos), nil
 }
