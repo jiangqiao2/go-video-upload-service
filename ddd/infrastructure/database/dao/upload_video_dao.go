@@ -6,6 +6,7 @@ import (
 	"upload-service/ddd/domain/repo"
 	"upload-service/ddd/infrastructure/database/po"
 	"upload-service/internal/resource"
+	"upload-service/pkg/logger"
 
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -32,11 +33,11 @@ func (d *UploadVideoDao) UpdateStatusByUUID(ctx context.Context, uploadVideoUUID
 func (d *UploadVideoDao) BatchCreate(ctx context.Context, uploadVideoPo *po.UploadVideoPo, uploadChunks []*po.UploadChunkPo) error {
 	return d.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&po.UploadVideoPo{}).Create(uploadVideoPo).Error; err != nil {
-			log.Errorf("BatchCreate failed to insert upload_video_po: %v", err)
+			logger.WithContext(ctx).Errorf("BatchCreate error %v uploadVideoPo%v ", err, uploadVideoPo)
 			return err
 		}
 		if err := tx.Model(&po.UploadChunkPo{}).Create(uploadChunks).Error; err != nil {
-			log.Errorf("BatchCreate failed to insert upload_chunk_po: %v", err)
+			logger.WithContext(ctx).Errorf("BatchCreate error %v UploadChunkPo%v ", err, uploadChunks)
 			return err
 		}
 		return nil
@@ -50,7 +51,6 @@ func (d *UploadVideoDao) QueryByFileNameAndHash(ctx context.Context, userUUID st
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		log.Errorf("QueryByFileNameAndHash failed to query upload_video_po: %v", err)
 		return nil, err
 	}
 	return &uploadVideoPo, nil

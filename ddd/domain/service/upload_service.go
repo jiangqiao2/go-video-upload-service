@@ -6,6 +6,7 @@ import (
 	neturl "net/url"
 	"strings"
 	"time"
+	"upload-service/pkg/logger"
 
 	log "github.com/sirupsen/logrus"
 
@@ -76,7 +77,7 @@ func (s *uploadServiceImpl) UploadVideoInit(ctx context.Context, cmd *vo.UploadV
 	))
 	chunkStoragePath := s.minioSrv.GenerateChunkStoragePath(ctx, uploadEntity.UploadVideoUUID())
 	uploadEntity = uploadEntity.SetStoragePath(storagePath).SetChunkStoragePath(chunkStoragePath)
-
+	logger.WithContext(ctx).Infof("UploadVideoInit %v", uploadEntity.TotalChunks())
 	uploadChunkEntityArr := make([]*entity.UploadChunkEntity, 0, uploadEntity.TotalChunks())
 	for i := 0; i < uploadEntity.TotalChunks(); i++ {
 		curChunkPath := fmt.Sprintf("%s%d", chunkStoragePath, i)
@@ -85,10 +86,10 @@ func (s *uploadServiceImpl) UploadVideoInit(ctx context.Context, cmd *vo.UploadV
 		))
 	}
 	if err = s.uploadVideoRepo.CreateUploadVideoAndChunks(ctx, uploadEntity, uploadChunkEntityArr); err != nil {
-		log.Errorf("UploadVideoInit CreateUploadVideoAndChunks error: %v", err)
+		logger.WithContext(ctx).Errorf("upload video failed, err:%v", err)
 		return nil, nil, err
 	}
-
+	logger.WithContext(ctx).Infof("CreateUploadVideoAndChunks %v", uploadEntity.TotalChunks())
 	s.refreshChunkPresign(ctx, uploadEntity, uploadChunkEntityArr)
 	return uploadEntity, uploadChunkEntityArr, nil
 }

@@ -8,7 +8,7 @@ import (
 	"upload-service/ddd/domain/vo"
 )
 
-// attachPresignForChunks maps entity presign info onto response DTOs.
+// attachPresignForChunks 将未完成分片的预签名信息映射到返回 DTO，便于前端继续上传。
 func attachPresignForChunks(uploadVideoEntity *entity.UploadVideoEntity, res *dto.UploadVideoDto, chunks []*entity.UploadChunkEntity) {
 	if uploadVideoEntity == nil || res == nil || len(res.UploadChunks) == 0 {
 		return
