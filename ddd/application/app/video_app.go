@@ -16,6 +16,8 @@ import (
 	"upload-service/ddd/domain/vo"
 	"upload-service/ddd/infrastructure/database/persistence"
 	grpcClient "upload-service/ddd/infrastructure/grpc"
+	rustfsInfra "upload-service/ddd/infrastructure/rustfs"
+	"upload-service/ddd/infrastructure/task"
 	"upload-service/pkg/errno"
 	"upload-service/pkg/kafka"
 )
@@ -44,13 +46,17 @@ var (
 // DefaultVideoApp constructs a VideoApp with default infrastructure dependencies.
 func DefaultVideoApp() VideoApp {
 	onceVideoApp.Do(func() {
+		minioService := rustfsInfra.DefaultRustFSService()
+		videoRepo := persistence.NewVideoRepository()
+		uploadVideoRepo := persistence.NewUploadVideoRepository()
+		userQueryGateway := grpcClient.NewUserQueryGateway(grpcClient.DefaultUserServiceClient())
 		singletonVideoApp = &videoAppImpl{
-			videoService:       service.NewVideoPublishService(),
-			videoRepo:          persistence.NewVideoRepository(),
+			videoService:       service.NewVideoPublishService(videoRepo, uploadVideoRepo, minioService),
+			videoRepo:          videoRepo,
 			userServiceClient:  grpcClient.DefaultUserServiceClient(),
 			videoServiceClient: grpcClient.DefaultVideoServiceClient(),
 			pollInterval:       5 * time.Second,
-			userQueryService:   service.NewUserQueryService(),
+			userQueryService:   service.NewUserQueryService(userQueryGateway),
 		}
 	})
 	return singletonVideoApp
@@ -72,9 +78,21 @@ func (a *videoAppImpl) PublishVideo(ctx context.Context, req *cqe.PublishVideoRe
 		return nil, errno.ErrNotFound
 	}
 
-	videoEntity, uploadVideoEntity, err := a.videoService.PublishVideo(ctx, req)
+	videoEntity, uploadVideoEntity, shouldCleanup, err := a.videoService.PublishVideo(ctx, &vo.PublishVideoCmd{
+		UploadVideoUUID:  req.UploadVideoUUID,
+		Title:            req.Title,
+		Description:      req.Description,
+		Tags:             req.Tags,
+		CoverURL:         req.CoverURL,
+		UserUUID:         req.UserUUID,
+		TargetResolution: req.TargetResolution,
+		TargetBitrate:    req.TargetBitrate,
+	})
 	if err != nil {
 		return nil, err
+	}
+	if shouldCleanup && uploadVideoEntity != nil {
+		task.EnqueueChunkCleanup(uploadVideoEntity.ChunkStoragePath(), int64(uploadVideoEntity.TotalChunks()))
 	}
 
 	// 预占位：写入 video-service，状态置 processing

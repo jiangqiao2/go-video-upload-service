@@ -15,6 +15,7 @@ import (
 	"upload-service/ddd/infrastructure/database/persistence"
 	grpcClient "upload-service/ddd/infrastructure/grpc"
 	rustfsInfra "upload-service/ddd/infrastructure/rustfs"
+	"upload-service/ddd/infrastructure/task"
 	"upload-service/pkg/errno"
 	"upload-service/pkg/logger"
 )
@@ -44,10 +45,12 @@ type uploadVideoAppImpl struct {
 
 func DefaultUploadVideoApp() UploadVideoApp {
 	onceUploadVideoApp.Do(func() {
+		minioService := rustfsInfra.DefaultRustFSService()
+		uploadRepo := persistence.NewUploadVideoRepository()
 		singletonUploadVideoApp = &uploadVideoAppImpl{
-			minioService:      rustfsInfra.DefaultRustFSService(),
-			uploadVideoRepo:   persistence.NewUploadVideoRepository(),
-			uploadVideoSrv:    service.NewUploadVideoService(),
+			minioService:      minioService,
+			uploadVideoRepo:   uploadRepo,
+			uploadVideoSrv:    service.NewUploadVideoService(uploadRepo, minioService),
 			userServiceClient: grpcClient.DefaultUserServiceClient(),
 		}
 	})
@@ -72,13 +75,19 @@ func (u *uploadVideoAppImpl) UploadVideoInit(ctx context.Context, req *cqe.Uploa
 		return nil, errno.ErrNotFound
 	}
 
-	uploadVideoEntity, chunkEntities, err := u.uploadVideoSrv.UploadVideoInit(ctx, req)
+	uploadVideoEntity, chunkEntities, err := u.uploadVideoSrv.UploadVideoInit(ctx, &vo.UploadVideoInitCmd{
+		FileName:    req.FileName,
+		FileSize:    req.FileSize,
+		TotalChunks: req.TotalChunks,
+		UserUUID:    req.UserUUID,
+		FileHash:    req.FileHash,
+	})
 	if err != nil {
 		ctxLogger.Errorf("UploadVideoInit domain service failed: %v", err)
 		return nil, err
 	}
 	res := dto.NewUpadVideoDto(uploadVideoEntity, chunkEntities)
-	service.AttachPresignForChunks(uploadVideoEntity, res, chunkEntities)
+	attachPresignForChunks(uploadVideoEntity, res, chunkEntities)
 	return res, nil
 }
 
@@ -98,7 +107,20 @@ func (u *uploadVideoAppImpl) MergeChunks(ctx context.Context, req *cqe.MergeChun
 		return nil, errno.ErrNotFound
 	}
 
-	return u.uploadVideoSrv.MergeChunk(ctx, req)
+	res, err := u.uploadVideoSrv.MergeChunk(ctx, &vo.MergeChunkCmd{
+		UploadVideoUUID: req.UploadVideoUUID,
+		UserUUID:        req.UserUUID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if res.ShouldEnqueueTask {
+		task.EnqueueMergeTask(res.UploadVideoUUID)
+	}
+	return &dto.MergeChunkDto{
+		Status:          res.Status,
+		UploadVideoUUID: res.UploadVideoUUID,
+	}, nil
 }
 
 func (u *uploadVideoAppImpl) QueryStoragePath(ctx context.Context, req *cqe.UploadVideoStoragePathReq) (*dto.UploadVideoStoragePathDto, error) {
@@ -168,7 +190,14 @@ func (u *uploadVideoAppImpl) PresignChunk(ctx context.Context, req *cqe.PresignC
 	if !userExists {
 		return nil, errno.ErrNotFound
 	}
-	res, err := u.uploadVideoSrv.PresignChunk(ctx, req)
+	res, err := u.uploadVideoSrv.PresignChunk(ctx, &vo.PresignChunkCmd{
+		ChunkUUID:       req.ChunkUUID,
+		UserUUID:        req.UserUUID,
+		UploadVideoUUID: req.UploadVideoUUID,
+		ChunkIndex:      req.ChunkIndex,
+		ChunkSize:       req.ChunkSize,
+		ContentType:     req.ContentType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +223,14 @@ func (u *uploadVideoAppImpl) CompleteChunk(ctx context.Context, req *cqe.Complet
 	if !userExists {
 		return nil, errno.ErrNotFound
 	}
-	res, err := u.uploadVideoSrv.CompleteChunk(ctx, req)
+	res, err := u.uploadVideoSrv.CompleteChunk(ctx, &vo.CompleteChunkCmd{
+		ChunkUUID:       req.ChunkUUID,
+		UserUUID:        req.UserUUID,
+		UploadVideoUUID: req.UploadVideoUUID,
+		ChunkIndex:      req.ChunkIndex,
+		ChunkSize:       req.ChunkSize,
+		ChunkHash:       req.ChunkHash,
+	})
 	if err != nil {
 		return nil, err
 	}
