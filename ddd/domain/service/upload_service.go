@@ -118,12 +118,12 @@ func (s *uploadServiceImpl) refreshChunkPresign(ctx context.Context, uploadVideo
 			// 现有链接仍有效，跳过重新生成
 			continue
 		}
-		putURL, err := s.minioSrv.PresignPutURL(ctx, bucket, key, 15*time.Minute)
+		putURL, err := s.minioSrv.PresignPutURL(ctx, bucket, key, 2*time.Hour)
 		if err != nil {
 			log.Errorf("refresh presign failed: %v", err)
 			continue
 		}
-		newExpiredAt := time.Now().Add(15 * time.Minute)
+		newExpiredAt := time.Now().Add(2 * time.Hour)
 		if err := s.uploadVideoRepo.UpdateUploadChunkPresign(ctx, ch.ChunkUUID(), putURL, newExpiredAt); err != nil {
 			log.Errorf("update chunk presign failed: %v", err)
 			continue
@@ -247,7 +247,7 @@ func (s *uploadServiceImpl) PresignChunk(ctx context.Context, cmd *vo.PresignChu
 	if chunkEntity.Status().IsCompleted() {
 		putURL = ""
 	} else {
-		putURL, err = s.minioSrv.PresignPutURL(ctx, "uploads", key, 15*time.Minute)
+		putURL, err = s.minioSrv.PresignPutURL(ctx, "uploads", key, 2*time.Hour)
 		if err != nil {
 			return nil, errno.NewBizError(errno.ErrInternalServer, err)
 		}
@@ -259,7 +259,7 @@ func (s *uploadServiceImpl) PresignChunk(ctx context.Context, cmd *vo.PresignChu
 		Bucket:          "uploads",
 		Key:             key,
 		PutURL:          putURL,
-		ExpiresSeconds:  900,
+		ExpiresSeconds:  7200,
 	}, nil
 }
 
