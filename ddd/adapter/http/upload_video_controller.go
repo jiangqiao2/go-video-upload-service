@@ -7,6 +7,7 @@ import (
 	uploadCqe "upload-service/ddd/application/cqe"
 	"upload-service/pkg/assert"
 	"upload-service/pkg/errno"
+	"upload-service/pkg/logger"
 	"upload-service/pkg/manager"
 	"upload-service/pkg/restapi"
 )
@@ -90,21 +91,25 @@ func (c *uploadVideoControllerImpl) Init(ctx *gin.Context) {
 	// 提取用户信息
 	userUUID, err := ExtractUserUUID(ctx)
 	if err != nil {
+		logger.WithContext(ctx.Request.Context()).Errorf("UploadVideoInit extract user info failed: %v", err)
 		restapi.Failed(ctx, err)
 		return
 	}
 
 	var cqe uploadCqe.UploadVideoInitReq
 	if err := ctx.ShouldBindJSON(&cqe); err != nil {
+		logger.WithContext(ctx.Request.Context()).Errorf("UploadVideoInit bind body failed user_uuid=%s err=%v", userUUID, err)
 		restapi.Failed(ctx, err)
 		return
 	}
 
 	// 将用户信息注入到请求中
+
 	cqe.UserUUID = userUUID
 	reqCtx := ctx.Request.Context()
 	result, err := c.uploadVideoApp.UploadVideoInit(reqCtx, &cqe)
 	if err != nil {
+		logger.WithContext(ctx.Request.Context()).Errorf("UploadVideoInit app failed user_uuid=%s file_name=%s file_size=%d total_chunks=%d err=%v", userUUID, cqe.FileName, cqe.FileSize, cqe.TotalChunks, err)
 		restapi.Failed(ctx, err)
 		return
 	}

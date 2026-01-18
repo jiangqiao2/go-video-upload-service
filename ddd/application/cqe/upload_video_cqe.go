@@ -14,10 +14,11 @@ func (u *UploadVideoInitReq) Validate() error {
 	if u.FileName == "" || len(u.FileName) > 256 {
 		return errno.ErrFileNameIllegal
 	}
-	if u.FileSize <= 0 || u.FileSize > 1024*1024*1024*5 {
+	if u.FileSize <= 0 || u.FileSize > 1024*1024*1024*10 {
 		return errno.ErrFileSizeIllegal
 	}
-	if u.TotalChunks <= 0 || u.TotalChunks > 512 {
+	// Allow more chunks for large files (e.g., 10GB with smaller chunk sizes).
+	if u.TotalChunks <= 0 || u.TotalChunks > 4096 {
 		return errno.ErrFileSizeIllegal
 	}
 	return nil

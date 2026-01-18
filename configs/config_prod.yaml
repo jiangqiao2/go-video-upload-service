@@ -113,7 +113,7 @@ dependencies:
     timeout: 30s
 
 upload:
-  max_file_size: 100MB
+  max_file_size: 10GB
   upload_path: "/tmp/uploads"
   chunk_size: 1MB
   allowed_types:

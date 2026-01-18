@@ -61,9 +61,9 @@ func (u *uploadVideoAppImpl) UploadVideoInit(ctx context.Context, req *cqe.Uploa
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
-
+	logger.WithContext(ctx).Infof("UploadVideoInit %v", req)
 	ctxLogger := logger.WithContext(ctx)
-
+	ctxLogger.Infof("upload video init req %+v", req)
 	// 调用user服务检查用户ID是否存在
 	userExists, err := u.userServiceClient.ValidateUser(ctx, req.UserUUID)
 	if err != nil {
